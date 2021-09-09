@@ -71,9 +71,16 @@ public protocol EventSourceProtocol {
     ///
     /// - Parameter event: name of the listener to be remove from event source.
     func removeEventListener(_ event: String)
+
+    /// Requests credentials from the delegate in response to a session-level authentication request from the remote server.
+    ///
+    /// - Parameter onReceiveChallenge: return `URLSession` instance and `URLAuthenticationChallenge`.
+    func onReceiveChallenge(
+        _ onReceiveChallenge: @escaping (URLSession, URLAuthenticationChallenge) -> (URLSession.AuthChallengeDisposition, URLCredential?)
+    )
 }
 
-open class EventSource: NSObject, EventSourceProtocol, URLSessionDataDelegate {
+open class EventSource: NSObject, EventSourceProtocol, URLSessionDataDelegate, URLSessionDelegate {
     static let DefaultRetryTime = 3000
 
     public let url: URL
@@ -86,6 +93,7 @@ open class EventSource: NSObject, EventSourceProtocol, URLSessionDataDelegate {
     private var onComplete: ((Int?, Bool?, NSError?) -> Void)?
     private var onMessageCallback: ((_ id: String?, _ event: String?, _ data: String?) -> Void)?
     private var eventListeners: [String: (_ id: String?, _ event: String?, _ data: String?) -> Void] = [:]
+    private var onReceiveChallenge: ((URLSession, URLAuthenticationChallenge) -> (URLSession.AuthChallengeDisposition, URLCredential?))?
 
     private var eventStreamParser: EventStreamParser?
     private var operationQueue: OperationQueue
@@ -189,6 +197,20 @@ open class EventSource: NSObject, EventSourceProtocol, URLSessionDataDelegate {
         var newRequest = request
         self.headers.forEach { newRequest.setValue($1, forHTTPHeaderField: $0) }
         completionHandler(newRequest)
+    }
+    
+    public func onReceiveChallenge(_ onReceiveChallenge: @escaping (URLSession, URLAuthenticationChallenge) -> (URLSession.AuthChallengeDisposition, URLCredential?)) {
+        self.onReceiveChallenge = onReceiveChallenge
+    }
+    
+    open func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        if let privateURL = onReceiveChallenge?(session, challenge) {
+            completionHandler(privateURL.0, privateURL.1)
+        }
     }
 }
 
